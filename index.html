@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRT Oscilloscope</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #0f0;
+  }
+  #canvas-container { width: 100vw; height: 100vh; }
+  canvas { display: block; }
+
+  #controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 16px 32px 24px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85) 30%);
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+  }
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 200px;
+  }
+  .control-group label {
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-shadow: 0 0 8px rgba(0,255,0,0.6);
+  }
+  .control-group .value {
+    font-size: 14px;
+    text-shadow: 0 0 10px rgba(0,255,0,0.8);
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 220px;
+    height: 4px;
+    background: #0a2a0a;
+    border-radius: 2px;
+    outline: none;
+    border: 1px solid #0a3a0a;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #0f0;
+    cursor: pointer;
+    box-shadow: 0 0 10px #0f0, 0 0 20px rgba(0,255,0,0.4);
+  }
+  #reset-view {
+    background: transparent;
+    color: #0f0;
+    border: 1px solid #0a3a0a;
+    padding: 8px 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    text-shadow: 0 0 8px rgba(0,255,0,0.6);
+    transition: all 0.2s;
+  }
+  #reset-view:hover {
+    border-color: #0f0;
+    box-shadow: 0 0 12px rgba(0,255,0,0.3);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #0f0;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 0 10px #0f0, 0 0 20px rgba(0,255,0,0.4);
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="controls">
+  <div class="control-group">
+    <label>Frequency</label>
+    <input type="range" id="frequency" min="0.5" max="12" step="0.1" value="4">
+    <div class="value"><span id="freq-val">4.0</span> Hz</div>
+  </div>
+  <div class="control-group">
+    <label>Amplitude</label>
+    <input type="range" id="amplitude" min="0.05" max="1.0" step="0.01" value="0.55">
+    <div class="value"><span id="amp-val">0.55</span></div>
+  </div>
+  <div class="control-group">
+    <label>Speed</label>
+    <input type="range" id="speed" min="0.5" max="40" step="0.5" value="2">
+    <div class="value"><span id="speed-val">2.0</span>x</div>
+  </div>
+  <div class="control-group">
+    <label>Glow</label>
+    <input type="range" id="glow" min="0.5" max="3.0" step="0.1" value="1.5">
+    <div class="value"><span id="glow-val">1.5</span></div>
+  </div>
+  <div class="control-group">
+    <button id="reset-view">RESET VIEW</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// --- Scene setup ---
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 2.8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x000000);
+container.appendChild(renderer.domElement);
+
+// --- Orbit Controls ---
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enableZoom = true;
+controls.enablePan = false;
+controls.minDistance = 0.3;
+controls.maxDistance = 15;
+
+// --- Post-processing ---
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  1.5,   // strength
+  0.6,   // radius
+  0.1    // threshold
+);
+composer.addPass(bloomPass);
+
+// CRT scanline + vignette shader
+const CRTShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+    time: { value: 0 },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    uniform float time;
+    varying vec2 vUv;
+
+    void main() {
+      // Slight barrel distortion
+      vec2 uv = vUv;
+      vec2 centered = uv - 0.5;
+      float dist = dot(centered, centered);
+      uv = uv + centered * dist * 0.08;
+
+      vec4 color = texture2D(tDiffuse, uv);
+
+      // Scanlines
+      float scanline = sin(uv.y * resolution.y * 1.2) * 0.06;
+      color.rgb -= scanline;
+
+      // Subtle horizontal flicker
+      float flicker = sin(time * 8.0) * 0.008;
+      color.rgb += flicker;
+
+      // Vignette
+      float vig = 1.0 - dist * 1.8;
+      vig = clamp(vig, 0.0, 1.0);
+      color.rgb *= vig;
+
+      // Slight phosphor tint
+      color.r *= 0.7;
+      color.b *= 0.75;
+
+      gl_FragColor = color;
+    }
+  `
+};
+const crtPass = new ShaderPass(CRTShader);
+composer.addPass(crtPass);
+
+// --- Graticule (ruler overlay) ---
+// Mimics the etched glass overlay on a real oscilloscope CRT
+const gratGroup = new THREE.Group();
+scene.add(gratGroup);
+
+// Graticule dimensions: 10 horizontal divs x 8 vertical divs
+const HDIVS = 10;
+const VDIVS = 8;
+const SUBDIV = 5; // minor ticks per division
+const GRAT_W = 0.92; // half-width in NDC (-0.92 to 0.92)
+const GRAT_H = 0.85; // half-height
+const left = -GRAT_W, right = GRAT_W, top_ = GRAT_H, bottom = -GRAT_H;
+
+// Border - bright etched rectangle
+const borderMat = new THREE.LineBasicMaterial({ color: 0x22aa44, transparent: true, opacity: 0.45 });
+const borderPts = [
+  new THREE.Vector3(left, top_, 0),
+  new THREE.Vector3(right, top_, 0),
+  new THREE.Vector3(right, bottom, 0),
+  new THREE.Vector3(left, bottom, 0),
+  new THREE.Vector3(left, top_, 0),
+];
+gratGroup.add(new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints(borderPts), borderMat
+));
+
+// Major grid lines (dashed style via short segments)
+const gridMat = new THREE.LineBasicMaterial({ color: 0x115522, transparent: true, opacity: 0.35 });
+
+// Vertical major lines
+for (let i = 1; i < HDIVS; i++) {
+  const x = left + (i / HDIVS) * (right - left);
+  // Draw as dotted: short dashes
+  const pts = [];
+  const dashLen = (top_ - bottom) / 80;
+  for (let y = bottom; y < top_; y += dashLen * 2) {
+    pts.push(new THREE.Vector3(x, y, 0));
+    pts.push(new THREE.Vector3(x, Math.min(y + dashLen, top_), 0));
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  gratGroup.add(new THREE.LineSegments(geo, gridMat));
+}
+
+// Horizontal major lines
+for (let i = 1; i < VDIVS; i++) {
+  const y = bottom + (i / VDIVS) * (top_ - bottom);
+  const pts = [];
+  const dashLen = (right - left) / 100;
+  for (let x = left; x < right; x += dashLen * 2) {
+    pts.push(new THREE.Vector3(x, y, 0));
+    pts.push(new THREE.Vector3(Math.min(x + dashLen, right), y, 0));
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  gratGroup.add(new THREE.LineSegments(geo, gridMat));
+}
+
+// Center axes - solid, brighter
+const axisMat = new THREE.LineBasicMaterial({ color: 0x22aa44, transparent: true, opacity: 0.4 });
+const centerY = bottom + (VDIVS / 2 / VDIVS) * (top_ - bottom);
+const centerX = left + (HDIVS / 2 / HDIVS) * (right - left);
+gratGroup.add(new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(left, centerY, 0), new THREE.Vector3(right, centerY, 0)
+  ]), axisMat
+));
+gratGroup.add(new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(centerX, bottom, 0), new THREE.Vector3(centerX, top_, 0)
+  ]), axisMat
+));
+
+// Subdivision tick marks along center axes
+const tickMat = new THREE.LineBasicMaterial({ color: 0x22aa44, transparent: true, opacity: 0.35 });
+const tickSize = 0.012;
+const smallTickSize = 0.007;
+
+// Ticks along horizontal center axis
+for (let i = 0; i <= HDIVS; i++) {
+  const majorX = left + (i / HDIVS) * (right - left);
+  // Major tick
+  gratGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(majorX, centerY - tickSize * 1.5, 0),
+      new THREE.Vector3(majorX, centerY + tickSize * 1.5, 0)
+    ]), tickMat
+  ));
+  // Minor subdivision ticks
+  if (i < HDIVS) {
+    for (let s = 1; s < SUBDIV; s++) {
+      const subX = majorX + (s / SUBDIV) * ((right - left) / HDIVS);
+      gratGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(subX, centerY - smallTickSize, 0),
+          new THREE.Vector3(subX, centerY + smallTickSize, 0)
+        ]), tickMat
+      ));
+    }
+  }
+}
+
+// Ticks along vertical center axis
+for (let i = 0; i <= VDIVS; i++) {
+  const majorY = bottom + (i / VDIVS) * (top_ - bottom);
+  // Major tick
+  gratGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(centerX - tickSize * 1.5, majorY, 0),
+      new THREE.Vector3(centerX + tickSize * 1.5, majorY, 0)
+    ]), tickMat
+  ));
+  // Minor subdivision ticks
+  if (i < VDIVS) {
+    for (let s = 1; s < SUBDIV; s++) {
+      const subY = majorY + (s / SUBDIV) * ((top_ - bottom) / VDIVS);
+      gratGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(centerX - smallTickSize, subY, 0),
+          new THREE.Vector3(centerX + smallTickSize, subY, 0)
+        ]), tickMat
+      ));
+    }
+  }
+}
+
+// --- Waveform line (main bright trace) ---
+const SEGMENTS = 512;
+const positions = new Float32Array(SEGMENTS * 3);
+const waveGeometry = new THREE.BufferGeometry();
+waveGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+const waveMaterial = new THREE.LineBasicMaterial({
+  color: 0x00ff40,
+  linewidth: 2,
+});
+const waveLine = new THREE.Line(waveGeometry, waveMaterial);
+scene.add(waveLine);
+
+// Secondary glow layer (thicker, dimmer)
+const glowPositions = new Float32Array(SEGMENTS * 3);
+const glowGeometry = new THREE.BufferGeometry();
+glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPositions, 3));
+const glowMaterial = new THREE.LineBasicMaterial({
+  color: 0x00ff30,
+  linewidth: 1,
+  transparent: true,
+  opacity: 0.35,
+});
+const glowLine = new THREE.Line(glowGeometry, glowMaterial);
+scene.add(glowLine);
+
+// --- Controls ---
+const freqSlider = document.getElementById('frequency');
+const ampSlider = document.getElementById('amplitude');
+const speedSlider = document.getElementById('speed');
+const glowSlider = document.getElementById('glow');
+const freqVal = document.getElementById('freq-val');
+const ampVal = document.getElementById('amp-val');
+const speedVal = document.getElementById('speed-val');
+const glowVal = document.getElementById('glow-val');
+
+let frequency = parseFloat(freqSlider.value);
+let amplitude = parseFloat(ampSlider.value);
+let speed = parseFloat(speedSlider.value);
+
+freqSlider.addEventListener('input', () => {
+  frequency = parseFloat(freqSlider.value);
+  freqVal.textContent = frequency.toFixed(1);
+});
+ampSlider.addEventListener('input', () => {
+  amplitude = parseFloat(ampSlider.value);
+  ampVal.textContent = amplitude.toFixed(2);
+});
+speedSlider.addEventListener('input', () => {
+  speed = parseFloat(speedSlider.value);
+  speedVal.textContent = speed.toFixed(1);
+});
+glowSlider.addEventListener('input', () => {
+  bloomPass.strength = parseFloat(glowSlider.value);
+  glowVal.textContent = parseFloat(glowSlider.value).toFixed(1);
+});
+
+// --- Reset view ---
+document.getElementById('reset-view').addEventListener('click', () => {
+  camera.position.set(0, 0, 2.8);
+  controls.target.set(0, 0, 0);
+  controls.update();
+});
+
+// --- Animation ---
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  controls.update();
+
+  const elapsed = clock.getElapsedTime();
+  crtPass.uniforms.time.value = elapsed;
+
+  const posAttr = waveGeometry.getAttribute('position');
+  const glowAttr = glowGeometry.getAttribute('position');
+
+  for (let i = 0; i < SEGMENTS; i++) {
+    const t = i / (SEGMENTS - 1);
+    // Map wave to graticule bounds
+    const x = left + t * (right - left);
+
+    // Oscillating sine wave with speed control
+    const phase = elapsed * speed;
+    const y = centerY + amplitude * GRAT_H * Math.sin(frequency * Math.PI * ((x - left) / (right - left)) * 2 + phase);
+
+    // Slight noise for phosphor jitter
+    const jitter = (Math.random() - 0.5) * 0.002;
+
+    posAttr.array[i * 3] = x;
+    posAttr.array[i * 3 + 1] = y + jitter;
+    posAttr.array[i * 3 + 2] = 0;
+
+    glowAttr.array[i * 3] = x;
+    glowAttr.array[i * 3 + 1] = y;
+    glowAttr.array[i * 3 + 2] = -0.01;
+  }
+
+  posAttr.needsUpdate = true;
+  glowAttr.needsUpdate = true;
+
+  composer.render();
+}
+
+animate();
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloomPass.resolution.set(w, h);
+  crtPass.uniforms.resolution.value.set(w, h);
+});
+</script>
+</body>
+</html>
