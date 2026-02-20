@@ -141,7 +141,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 0, 2.8);
+camera.position.set(0, 0, 2.15);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -232,8 +232,8 @@ scene.add(gratGroup);
 const HDIVS = 10;
 const VDIVS = 8;
 const SUBDIV = 5; // minor ticks per division
-const GRAT_W = 0.92; // half-width in NDC (-0.92 to 0.92)
-const GRAT_H = 0.85; // half-height
+const GRAT_W = 1.0; // fill edge to edge
+const GRAT_H = 1.0;
 const left = -GRAT_W, right = GRAT_W, top_ = GRAT_H, bottom = -GRAT_H;
 
 // Border - bright etched rectangle
@@ -406,7 +406,7 @@ glowSlider.addEventListener('input', () => {
 
 // --- Reset view ---
 document.getElementById('reset-view').addEventListener('click', () => {
-  camera.position.set(0, 0, 2.8);
+  camera.position.set(0, 0, 2.15);
   controls.target.set(0, 0, 0);
   controls.update();
 });
